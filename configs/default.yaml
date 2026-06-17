@@ -1,0 +1,39 @@
+# ── Domain Randomization Default Configuration ──────────────────────────────
+
+scene_path: "assets/scenes/example_factory.xml"
+
+texture:
+  enabled: true
+  mode: rgb                          # rgb | checker | noise | gradient
+  rgba_range: [0.2, 1.0, 0.2, 1.0, 0.2, 1.0, 1.0, 1.0]  # Rmin,Rmax, Gmin,Gmax, Bmin,Bmax, Amin,Amax
+  geom_overrides: {}
+  exclude_geoms: []                  # geoms whose name contains these substrings are excluded
+
+lighting:
+  enabled: true
+  position_jitter: 0.5               # ± meters per axis from nominal
+  diffuse_range: [0.3, 1.0]         # per-channel
+  ambient_range: [0.1, 0.5]         # per-channel
+  specular_range: [0.0, 0.5]        # per-channel
+  direction_jitter: 0.3             # radians
+  random_toggle: false              # randomly toggle lights on/off
+  toggle_probability: 0.8
+
+camera:
+  enabled: true
+  position_jitter: [0.1, 0.1, 0.05] # ± meters per axis
+  rotation_jitter: 0.05             # ± around nominal quaternion components
+  fovy_range: [40.0, 70.0]          # degrees
+  random_camera: true               # pick random camera if scene has multiple
+
+dataset:
+  num_episodes: 1000
+  frames_per_episode: 1
+  output_dir: "./datasets"
+  output_format: hdf5
+  render_height: 480
+  render_width: 640
+  save_depth: true
+  save_segmentation: false
+
+seed: null                           # null = use system randomness

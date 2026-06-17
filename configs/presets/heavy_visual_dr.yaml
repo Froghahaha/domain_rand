@@ -1,0 +1,24 @@
+# Preset: Heavy visual domain randomization
+# Randomizes textures, lighting, and camera with wide ranges.
+
+texture:
+  enabled: true
+  mode: rgb
+  rgba_range: [0.1, 1.0, 0.1, 1.0, 0.1, 1.0, 0.5, 1.0]  # wider RGB range, alpha can vary
+
+lighting:
+  enabled: true
+  position_jitter: 1.0               # wider position jitter
+  diffuse_range: [0.1, 1.0]         # allow very dim diffuse
+  ambient_range: [0.05, 0.6]        # allow darker ambient
+  specular_range: [0.0, 0.8]        # brighter specular possible
+  direction_jitter: 0.5             # wider direction jitter
+  random_toggle: true               # randomly toggle lights
+  toggle_probability: 0.7
+
+camera:
+  enabled: true
+  position_jitter: [0.2, 0.2, 0.1]  # wider position jitter
+  rotation_jitter: 0.1              # wider rotation jitter
+  fovy_range: [30.0, 80.0]          # wider FOV range
+  random_camera: true

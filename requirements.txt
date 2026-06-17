@@ -1,0 +1,7 @@
+mujoco>=3.2.5
+numpy>=1.24
+pyyaml>=6.0
+h5py>=3.9
+pytest>=7.0
+matplotlib>=3.7
+opencv-python>=4.8

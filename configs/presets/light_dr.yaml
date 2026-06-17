@@ -1,0 +1,16 @@
+# Preset: Light domain randomization — lighting only
+
+texture:
+  enabled: false
+
+lighting:
+  enabled: true
+  position_jitter: 0.3
+  diffuse_range: [0.3, 0.8]
+  ambient_range: [0.1, 0.4]
+  specular_range: [0.0, 0.3]
+  direction_jitter: 0.2
+  random_toggle: false
+
+camera:
+  enabled: false

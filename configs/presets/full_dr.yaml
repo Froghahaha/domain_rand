@@ -1,0 +1,31 @@
+# Preset: Full domain randomization (visual + prepares for physics)
+
+texture:
+  enabled: true
+  mode: rgb
+  rgba_range: [0.1, 1.0, 0.1, 1.0, 0.1, 1.0, 1.0, 1.0]
+
+lighting:
+  enabled: true
+  position_jitter: 0.8
+  diffuse_range: [0.2, 1.0]
+  ambient_range: [0.05, 0.5]
+  specular_range: [0.0, 0.6]
+  direction_jitter: 0.4
+  random_toggle: true
+  toggle_probability: 0.75
+
+camera:
+  enabled: true
+  position_jitter: [0.15, 0.15, 0.08]
+  rotation_jitter: 0.08
+  fovy_range: [35.0, 75.0]
+  random_camera: true
+
+dataset:
+  num_episodes: 5000
+  frames_per_episode: 1
+  render_height: 480
+  render_width: 640
+  save_depth: true
+  save_segmentation: false
