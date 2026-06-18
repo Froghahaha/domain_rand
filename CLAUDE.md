@@ -32,6 +32,12 @@ python -m pytest tests/ -v
 
 # Run a single test file
 python -m pytest tests/test_distributions.py -v
+
+# Collect imitation-learning demos (interactive, needs keyboard + display)
+python scripts/collect_demos.py --config configs/demo_base.yaml \
+    --task your_module.YourTask \
+    --policy domain_rand.policy.keyboard_teleop.KeyboardTeleop \
+    -n 50 -o ./datasets/my_demos.h5
 ```
 
 ## Architecture
@@ -70,3 +76,49 @@ The pipeline is: **Config → Scene → Randomizers → Render → Record**
 - `geom_texid` does NOT exist — texture mapping goes through `geom_matid` → `mat_texid`
 - `light_directional` does NOT exist — use `light_type` instead
 - `<light>` and `<camera>` elements must be inside `<worldbody>` in XML (MjSpec validates this strictly)
+
+### Interactive demo collection (IL)
+
+Two pipelines coexist:
+
+| Pipeline | Entry | Loop |
+|----------|-------|------|
+| **Offline DR** | `DatasetCollector` + `generate_dataset.py` | randomize → `mj_forward` → render ×1 → record |
+| **Interactive IL** | `DemoCollector` + `collect_demos.py` | randomize → `task.reset` → loop { `policy.get_action` → `task.step` → render } → record sequence |
+
+Core abstractions for IL:
+
+- **`Task`** (`tasks/base.py`) — ABC the user implements: `reset(scene, rng)`, `step(scene, action)`, `get_observation(scene)`. This is the ONLY file a user needs to write for a new task. Domain randomization, rendering, and recording are handled by the framework.
+- **`Policy`** (`policy/base.py`) — ABC with single method `get_action(observation) -> np.ndarray | None`. Built-in: `KeyboardTeleop` (WASD/QE control via OpenCV).
+- **`DemoCollector`** (`pipeline/demo_collector.py`) — injects Task + Policy, orchestrates the DR → reset → action-loop → render → record cycle.
+- **`ILRecorder`** (`pipeline/il_recorder.py`) — writes multi-frame trajectories: `episode_N/observations/{rgb, state}` + `actions` + `rewards` + `dones`.
+
+Config additions:
+- `ILDemoConfig` on `DomainRandConfig.il_demo` — `num_demos`, `max_steps`, `control_substeps`, `camera`, `display_scale`, `save_depth`.
+- `configs/demo_base.yaml` — template for demo collection configs.
+
+Scene convenience methods added (`scene.py`):
+- `get_body_index(name)`, `get_joint_index(name)`, `get_actuator_index(name)`, `get_site_index(name)`
+- `get_joint_qpos(name)`, `set_joint_qpos(name, value)`, `get_joint_qvel(name)`
+- `get_body_pose(name)`, `get_site_pose(name)`, `get_camera_pose(name)`
+- `reset_dynamics()` — zeros qpos/qvel/ctrl + `mj_forward`
+
+### Writing a new task (user guide)
+
+1. Implement `Task` from `domain_rand.tasks.base`:
+   ```python
+   class MyTask(Task):
+       def reset(self, scene, rng):
+           # randomize initial state, set data.qpos, call scene.forward()
+           return self.get_observation(scene)
+
+       def step(self, scene, action):
+           # apply action → scene.step() → compute reward/done
+           return obs, reward, done, {}
+
+       def get_observation(self, scene):
+           return {"state": state_vector}
+   ```
+2. Create a scene XML with the robot, objects, and cameras.
+3. Create a config YAML pointing to the scene.
+4. Run: `python scripts/collect_demos.py --config my_config.yaml --task my_module.MyTask`

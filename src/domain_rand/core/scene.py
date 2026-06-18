@@ -164,3 +164,89 @@ class Scene:
             return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_LIGHT, name)
         except Exception:
             return -1
+
+    def get_body_index(self, name: str) -> int:
+        """Get body index by name. Returns -1 if not found."""
+        try:
+            return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
+        except Exception:
+            return -1
+
+    def get_joint_index(self, name: str) -> int:
+        """Get joint index by name. Returns -1 if not found."""
+        try:
+            return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        except Exception:
+            return -1
+
+    def get_actuator_index(self, name: str) -> int:
+        """Get actuator index by name. Returns -1 if not found."""
+        try:
+            return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+        except Exception:
+            return -1
+
+    def get_site_index(self, name: str) -> int:
+        """Get site index by name. Returns -1 if not found."""
+        try:
+            return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, name)
+        except Exception:
+            return -1
+
+    # ── Dynamics helpers ───────────────────────────────────────────────────
+
+    def get_joint_qpos(self, name: str) -> np.ndarray:
+        """Get joint qpos values by joint name."""
+        jid = self.get_joint_index(name)
+        if jid < 0:
+            raise ValueError(f"Joint '{name}' not found.")
+        adr = self.model.jnt_qposadr[jid]
+        nq = self.model.jnt_qposadr[jid + 1] - adr if jid + 1 < self.model.njnt else self.model.nq - adr
+        return self.data.qpos[adr:adr + nq].copy()
+
+    def set_joint_qpos(self, name: str, value: np.ndarray) -> None:
+        """Set joint qpos values by joint name."""
+        jid = self.get_joint_index(name)
+        if jid < 0:
+            raise ValueError(f"Joint '{name}' not found.")
+        adr = self.model.jnt_qposadr[jid]
+        nq = self.model.jnt_qposadr[jid + 1] - adr if jid + 1 < self.model.njnt else self.model.nq - adr
+        self.data.qpos[adr:adr + nq] = value
+
+    def get_joint_qvel(self, name: str) -> np.ndarray:
+        """Get joint qvel values by joint name."""
+        jid = self.get_joint_index(name)
+        if jid < 0:
+            raise ValueError(f"Joint '{name}' not found.")
+        adr = self.model.jnt_dofadr[jid]
+        nv = self.model.jnt_dofadr[jid + 1] - adr if jid + 1 < self.model.njnt else self.model.nv - adr
+        return self.data.qvel[adr:adr + nv].copy()
+
+    def get_body_pose(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        """Get body (position, quaternion) in world frame by body name."""
+        bid = self.get_body_index(name)
+        if bid < 0:
+            raise ValueError(f"Body '{name}' not found.")
+        return self.data.xpos[bid].copy(), self.data.xquat[bid].copy()
+
+    def get_site_pose(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        """Get site (position, rotation_matrix) in world frame by site name."""
+        sid = self.get_site_index(name)
+        if sid < 0:
+            raise ValueError(f"Site '{name}' not found.")
+        return self.data.site_xpos[sid].copy(), self.data.site_xmat[sid].reshape(3, 3).copy()
+
+    def get_camera_pose(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        """Get camera (position, rotation_matrix) in world frame by camera name."""
+        cid = self.get_camera_index(name)
+        if cid < 0:
+            raise ValueError(f"Camera '{name}' not found.")
+        return self.data.cam_xpos[cid].copy(), self.data.cam_xmat[cid].reshape(3, 3).copy()
+
+    def reset_dynamics(self) -> None:
+        """Reset qpos, qvel, and ctrl to zero and run forward kinematics."""
+        self.data.qpos[:] = 0.0
+        self.data.qvel[:] = 0.0
+        if self.model.nu > 0:
+            self.data.ctrl[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)

@@ -1,6 +1,9 @@
 # Domain Rand — MuJoCo 域随机化数据集生成工具
 
-基于 MuJoCo 的 Domain Randomization 数据集制作工具，支持视觉域随机化（纹理/颜色、光照、相机），渲染 RGB + 深度图像，并以结构化 HDF5 格式导出数据集。
+基于 MuJoCo 的 Domain Randomization 数据集制作工具，支持：
+
+- **离线 DR 数据集**：视觉域随机化（纹理/颜色、光照、相机），静态场景批量渲染
+- **交互式 IL 示教采集**：Task + Policy 解耦架构，键盘遥操作录制多帧轨迹
 
 ## 安装
 
@@ -46,22 +49,32 @@ domain_rand/
 │   ├── core/                   # 核心组件
 │   │   ├── config.py           # 配置系统（dataclass + YAML）
 │   │   ├── distributions.py    # 随机分布（Uniform/LogUniform/Normal/Choice）
-│   │   └── scene.py            # 场景管理
+│   │   └── scene.py            # 场景管理 + 动力学辅助方法
 │   ├── randomizers/            # 随机化器
 │   │   ├── base.py             # 抽象基类 + 组合器
 │   │   ├── texture.py          # 纹理/颜色随机化
 │   │   ├── lighting.py         # 光照随机化
-│   │   └── camera.py           # 相机随机化
+│   │   ├── camera.py           # 相机随机化
+│   │   └── placement.py        # 物体放置随机化
+│   ├── tasks/                  # 🆕 Task 抽象（用户实现接口）
+│   │   └── base.py             # Task ABC
+│   ├── policy/                 # 🆕 策略抽象（动作生成）
+│   │   ├── base.py             # Policy ABC
+│   │   └── keyboard_teleop.py  # 键盘遥操作
 │   ├── pipeline/               # 数据采集管线
-│   │   ├── collector.py        # 主采集循环
-│   │   ├── recorder.py         # HDF5 记录器
+│   │   ├── collector.py        # 离线 DR 采集循环
+│   │   ├── demo_collector.py   # 🆕 交互式 IL 采集循环
+│   │   ├── recorder.py         # 单帧 HDF5 记录器
+│   │   ├── il_recorder.py      # 🆕 多帧轨迹 HDF5 记录器
 │   │   └── metadata.py         # 元数据管理
 │   └── utils/
 │       └── rendering.py        # RGB/深度渲染 + 相机矩阵
 ├── assets/scenes/              # MuJoCo 场景文件
-│   └── example_factory.xml     # 示例场景（箱子+物体）
+│   ├── example_factory.xml     # 示例场景（箱子+物体）
+│   └── table_with_stl.xml      # 桌子+STL物体场景
 ├── scripts/                    # 运行脚本
-│   ├── generate_dataset.py     # 数据集生成入口
+│   ├── generate_dataset.py     # 离线数据集生成入口
+│   ├── collect_demos.py        # 🆕 交互式 IL 示教采集入口
 │   ├── visualize_dataset.py    # 数据集可视化
 │   └── verify_dataset.py       # 数据集结构验证
 └── tests/                      # 单元测试
@@ -133,9 +146,289 @@ dataset.h5
 | `render_width` | int | `640` | 渲染宽度 |
 | `save_depth` | bool | `true` | 是否保存深度图 |
 
-## 扩展
+## IL 示教采集（交互式）
 
-新增随机化器只需继承 `Randomizer` 基类：
+除了离线静态渲染，项目还提供了**交互式示教采集管线**，用于为 Imitation Learning 录制多帧轨迹数据（如 Push-T、Pick-and-Place 等机器人任务）。
+
+### 架构
+
+两条管线并存，互不干扰：
+
+| 管线 | 入口 | 循环 |
+|------|------|------|
+| **离线 DR** | `DatasetCollector` + `generate_dataset.py` | `randomize` → `mj_forward` → render ×1 → record |
+| **交互式 IL** | `DemoCollector` + `collect_demos.py` | `randomize` → `task.reset` → loop { `policy.get_action` → `task.step` → render } → record |
+
+核心抽象：
+
+```
+┌──────────────────────┐     ┌──────────────────────────┐
+│ Task (你实现)        │     │ Policy (你选择/实现)      │
+│                      │     │                          │
+│ reset(scene, rng)    │     │ get_action(obs) → action │
+│ step(scene, action)  │     │                          │
+│ get_observation()    │     │ 内置: KeyboardTeleop     │
+└──────┬───────────────┘     └──────────┬───────────────┘
+       │ 注入                           │ 注入
+       └──────────┬─────────────────────┘
+                  ▼
+     ┌────────────────────────┐
+     │ DemoCollector          │  ← 框架提供，task 作者不需要碰
+     │  • 场景加载 + DR       │
+     │  • 渲染 + OpenCV 显示  │
+     │  • HDF5 轨迹记录       │
+     │  • episode 管理        │
+     └────────────────────────┘
+```
+
+- **`Task`**（[tasks/base.py](src/domain_rand/tasks/base.py)）— 你写新 task 时**唯一需要实现的接口**
+- **`Policy`**（[policy/base.py](src/domain_rand/policy/base.py)）— 动作生成器，内置 `KeyboardTeleop`
+- **`DemoCollector`**（[pipeline/demo_collector.py](src/domain_rand/pipeline/demo_collector.py)）— 注入 Task + Policy，管理完整采集循环
+- **`ILRecorder`**（[pipeline/il_recorder.py](src/domain_rand/pipeline/il_recorder.py)）— 多帧 HDF5 轨迹记录器
+
+### IL 数据集格式（HDF5）
+
+```
+demos.h5
+├── .attrs/
+│   ├── config_json          # 完整配置
+│   ├── num_episodes
+│   ├── action_dim           # action 向量维度
+│   ├── state_dim            # state 向量维度
+│   └── task_type / policy_type
+├── episode_0000/
+│   ├── observations/
+│   │   ├── rgb              # (T, H, W, 3) uint8  ← 帧序列
+│   │   ├── state            # (T, D) float32      ← 状态序列
+│   │   └── depth            # (T, H, W) float32  [可选]
+│   ├── actions              # (T, A) float32
+│   ├── rewards              # (T,) float32
+│   ├── dones                # (T,) bool
+│   └── .attrs/meta          # episode 元数据
+└── ...
+```
+
+### 写一个新 Task（开发指引）
+
+实现一个自定义 task 只需 **3 步**：
+
+---
+
+#### 第 1 步：创建 MuJoCo 场景 XML
+
+在 `assets/scenes/` 下创建场景文件，包含你的机器人、操作物体、目标标记和相机。
+
+关键约定 —— 相机挂载方式：
+
+```xml
+<!-- 世界固定相机（参考视角） -->
+<camera name="cam_overhead" pos="0 1.5 2.0" quat="..." fovy="50" />
+
+<!-- 眼在手上相机：挂在机器人末端 body 下，跟随运动 -->
+<body name="end_effector" pos="...">
+    <geom name="pusher_tip" type="cylinder" ... />
+    <camera name="eye_in_hand" pos="0.03 0.03 0.05" quat="..." fovy="70" />
+</body>
+```
+
+眼在手上相机的外参 (`data.cam_xpos` / `data.cam_xmat`) 会在每次 `mj_forward` / `mj_step` 后自动更新，无需手动处理。
+
+---
+
+#### 第 2 步：实现 `Task` 接口
+
+创建你的 task 模块（可以放在项目外任意位置），继承 `Task` ABC：
+
+```python
+import numpy as np
+from domain_rand.tasks.base import Task
+
+class PushTTask(Task):
+    """Push-T 任务：控制末端推动 T 形物体到目标位置。"""
+
+    def __init__(self):
+        # 配置参数
+        self.obj_body = "push_t"
+        self.goal_body = "goal"
+        self.max_steps = 200
+
+    # ── 必须实现 ──────────────────────────────────────
+
+    def reset(self, scene, rng):
+        """每 episode 开始时调用。随机化初始状态并返回初始观测。"""
+        # 1. 随机化物体位姿
+        obj_x = rng.uniform(-0.25, 0.25)
+        obj_y = rng.uniform(-0.18, 0.18)
+        obj_yaw = rng.uniform(-3.14, 3.14)
+        qw, qz = np.cos(obj_yaw / 2), np.sin(obj_yaw / 2)
+        scene.set_joint_qpos(self.obj_body,
+            np.array([obj_x, obj_y, 0.43, qw, 0.0, 0.0, qz]))
+
+        # 2. 随机化目标位置
+        goal_x = rng.uniform(-0.20, 0.20)
+        goal_y = rng.uniform(-0.15, 0.15)
+        gid = scene.get_body_index(self.goal_body)
+        scene.model.body_pos[gid] = np.array([goal_x, goal_y, 0.426])
+
+        # 3. 重置机器人到零位
+        scene.reset_dynamics()
+
+        # 4. 让物理稳定（物体落到桌面）
+        for _ in range(50):
+            scene.step()
+
+        self._step_count = 0
+        return self.get_observation(scene)
+
+    def step(self, scene, action):
+        """执行一步。action 来自 Policy（遥操作/脚本/模型）。"""
+        # 1. 施加动作到机器人关节
+        qpos = scene.get_joint_qpos("j_x")  # 示例：读取 X 关节
+        scene.set_joint_qpos("j_x", qpos + action[0:1])
+        # ... 同理设置 Y 和 yaw 关节
+
+        # 2. 步进仿真（可多次子步）
+        for _ in range(5):
+            scene.step()
+
+        # 3. 计算 reward（物体离目标多远）
+        obj_pos = scene.get_body_pose(self.obj_body)[0]
+        goal_pos = scene.get_body_pose(self.goal_body)[0]
+        dist = np.linalg.norm(obj_pos[:2] - goal_pos[:2])
+        reward = -dist
+
+        # 4. 判断终止
+        self._step_count += 1
+        done = (dist < 0.03) or (self._step_count >= self.max_steps)
+
+        obs = self.get_observation(scene)
+        info = {"distance": float(dist)}
+        return obs, reward, done, info
+
+    def get_observation(self, scene):
+        """返回当前观测。DemoCollector 会自动补充渲染图像。"""
+        return {
+            "state": self._get_state_vector(scene),
+        }
+
+    # ── 可选 ──────────────────────────────────────────
+
+    @property
+    def action_spec(self):
+        return {"shape": (3,), "dtype": "float32",
+                "names": ["dx", "dy", "dyaw"]}
+
+    @property
+    def state_spec(self):
+        return {"shape": (6,), "dtype": "float32",
+                "names": ["jx", "jy", "jyaw", "obj_x", "obj_y", "obj_yaw"]}
+
+    # ── 内部辅助 ──────────────────────────────────────
+
+    def _get_state_vector(self, scene):
+        jx = scene.get_joint_qpos("j_x")[0]
+        jy = scene.get_joint_qpos("j_y")[0]
+        jyaw = scene.get_joint_qpos("j_yaw")[0]
+        obj_pos = scene.get_body_pose(self.obj_body)[0]
+        return np.array([jx, jy, jyaw, obj_pos[0], obj_pos[1], 0.0],
+                        dtype=np.float32)
+```
+
+每个方法的职责：
+
+| 方法 | 调用时机 | 职责 |
+|------|---------|------|
+| `reset(scene, rng)` | 每 episode 开始 | 随机化初始状态、重置机器人、返回 `obs` |
+| `step(scene, action)` | 每帧 | 施加 action → 步进仿真 → 计算 reward + done |
+| `get_observation(scene)` | reset / step 后 | 返回 `{"state": np.ndarray}`，图像由框架补充 |
+| `action_spec` / `state_spec` | 初始化 | 元数据，写入 HDF5 `.attrs` |
+
+**重要**：`Scene` 提供了丰富的辅助方法，task 作者无需手动调用 `mujoco.mj_name2id` 或操作底层数组索引。见 [scene.py](src/domain_rand/core/scene.py) 中的 `get_joint_qpos` / `set_joint_qpos` / `get_body_pose` / `reset_dynamics` 等。
+
+---
+
+#### 第 3 步：配置 + 运行
+
+创建配置文件（只需覆盖场景路径和相机名称）：
+
+```yaml
+# configs/my_push_task.yaml
+scene_path: "assets/scenes/push_t_robot.xml"
+
+il_demo:
+  num_demos: 100
+  max_steps: 300
+  camera: "eye_in_hand"      # 眼在手上相机名称
+  display_scale: 1.0
+
+texture:
+  enabled: true               # 纹理 DR 开启（训练鲁棒策略）
+  exclude_geoms: [table_top, goal_]  # 排除不需要随机化的物体
+
+lighting:
+  enabled: true               # 光照 DR 开启
+
+camera:
+  enabled: false              # 眼在手上相机不应抖动
+```
+
+运行采集：
+
+```bash
+python scripts/collect_demos.py \
+    --config configs/my_push_task.yaml \
+    --task my_tasks.push_t.PushTTask \
+    --policy domain_rand.policy.keyboard_teleop.KeyboardTeleop \
+    -n 100 -o ./datasets/push_t_demos.h5
+```
+
+参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `--config` | 场景 + DR + IL 配置文件 |
+| `--task` | Task 类的完整模块路径（`module.ClassName`） |
+| `--policy` | Policy 类的完整模块路径（内置 `KeyboardTeleop` 或自定义） |
+| `-n` / `--num-demos` | 采集的 demo 数量 |
+| `-o` / `--output` | 输出 HDF5 路径 |
+
+### 键盘遥操作说明
+
+内置 `KeyboardTeleop` 默认键位（可在代码中自定义）：
+
+| 按键 | 动作维度 | 效果 |
+|------|---------|------|
+| `W` / `S` | dim 0 | X 轴正/负方向移动 |
+| `A` / `D` | dim 1 | Y 轴正/负方向移动 |
+| `Q` / `E` | dim 2 | 偏航角正/负旋转 |
+| `N` | — | 提前结束当前 episode，进入下一个 |
+| `R` | — | 重置当前 episode（丢弃数据重来） |
+| `ESC` | — | 退出采集 |
+
+可通过 `add_key_binding(key, dim, sign)` 或覆写 `DEFAULT_KEYMAP` 自定义键位。
+
+### Scene 辅助方法速查
+
+Task 实现中常用的方法（[scene.py](src/domain_rand/core/scene.py)）：
+
+| 方法 | 返回 | 用途 |
+|------|------|------|
+| `get_joint_qpos(name)` | `np.ndarray` | 读取关节位置 |
+| `set_joint_qpos(name, val)` | — | 设置关节位置 |
+| `get_joint_qvel(name)` | `np.ndarray` | 读取关节速度 |
+| `get_body_pose(name)` | `(pos, quat)` | 读取 body 世界位姿 |
+| `get_body_index(name)` | `int` | body 索引（用于读写 `model.body_pos[id]`） |
+| `get_joint_index(name)` | `int` | 关节索引 |
+| `get_camera_pose(name)` | `(pos, rot_mat)` | 相机世界位姿 |
+| `reset_dynamics()` | — | qpos/qvel/ctrl 清零 + forward |
+| `forward()` | — | 正向运动学（不积分） |
+| `step()` | — | 完整仿真步（积分 + 碰撞） |
+| `model` | `MjModel` | 原始 MuJoCo 模型（高级用法） |
+| `data` | `MjData` | 原始 MuJoCo 数据（高级用法） |
+
+## 扩展：新增随机化器
+
+继承 `Randomizer` 基类：
 
 ```python
 from domain_rand.randomizers.base import Randomizer
@@ -148,6 +441,3 @@ class MyRandomizer(Randomizer):
 
 然后在 `DomainRandomizer` 中注册即可。
 
-## 许可
-
-MIT

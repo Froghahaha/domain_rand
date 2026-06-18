@@ -51,6 +51,27 @@ class LightingRandomizationConfig:
     toggle_probability: float = 0.8
 
 
+# ── Object placement randomization config ────────────────────────────────────
+
+@dataclass
+class PlacementRandomizationConfig:
+    enabled: bool = True
+    # Number of objects to place on the table (min, max inclusive)
+    num_objects_range: tuple[int, int] = (1, 3)
+    # Body names of the objects to manage
+    object_bodies: list[str] = field(default_factory=lambda: ["obj_1", "obj_2", "obj_3"])
+    # Table surface X range (meters)
+    table_x_range: tuple[float, float] = (-0.30, 0.30)
+    # Table surface Y range (meters)
+    table_y_range: tuple[float, float] = (-0.22, 0.22)
+    # Z height of the table surface (meters); mesh Z offset is auto-computed
+    table_z: float = 0.425
+    # Yaw rotation range around Z axis (degrees)
+    yaw_range: tuple[float, float] = (-180.0, 180.0)
+    # Z coordinate for hidden objects
+    hide_z: float = -10.0
+
+
 # ── Camera randomization config ─────────────────────────────────────────────
 
 @dataclass
@@ -80,6 +101,25 @@ class DatasetConfig:
     save_segmentation: bool = False
 
 
+# ── IL Demo config ──────────────────────────────────────────────────────────
+
+@dataclass
+class ILDemoConfig:
+    enabled: bool = True
+    # Number of demo episodes to collect
+    num_demos: int = 100
+    # Max steps per episode (safety limit)
+    max_steps: int = 300
+    # Number of physics substeps per action applied
+    control_substeps: int = 5
+    # Name of the camera used for observations
+    camera: str = "eye_in_hand"
+    # Display scale factor for the OpenCV preview window
+    display_scale: float = 1.0
+    # Whether to save depth images alongside RGB
+    save_depth: bool = False
+
+
 # ── Top-level config ────────────────────────────────────────────────────────
 
 @dataclass
@@ -87,8 +127,10 @@ class DomainRandConfig:
     scene_path: str = ""
     texture: TextureRandomizationConfig = field(default_factory=TextureRandomizationConfig)
     lighting: LightingRandomizationConfig = field(default_factory=LightingRandomizationConfig)
+    placement: PlacementRandomizationConfig = field(default_factory=PlacementRandomizationConfig)
     camera: CameraRandomizationConfig = field(default_factory=CameraRandomizationConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    il_demo: ILDemoConfig = field(default_factory=ILDemoConfig)
     seed: int | None = None
 
 

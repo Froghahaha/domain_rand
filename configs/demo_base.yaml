@@ -1,0 +1,45 @@
+# ── IL Demo Collection Base Configuration ─────────────────────────────────────
+# This config is used with scripts/collect_demos.py.
+# Override scene_path and DR settings for your specific task.
+
+scene_path: "assets/scenes/table_with_stl.xml"
+
+# Visual domain randomization — enabled by default for robust policy training
+texture:
+  enabled: true
+  mode: rgb
+  rgba_range: [0.2, 1.0, 0.2, 1.0, 0.2, 1.0, 1.0, 1.0]
+  exclude_geoms: []
+
+lighting:
+  enabled: true
+  position_jitter: 0.3
+  diffuse_range: [0.4, 1.0]
+  ambient_range: [0.1, 0.4]
+  specular_range: [0.0, 0.4]
+  direction_jitter: 0.2
+  random_toggle: false
+
+placement:
+  enabled: false                         # task scripts usually handle object placement
+
+camera:
+  enabled: false                         # disable jitter for eye-in-hand / task cameras
+
+dataset:
+  render_height: 480
+  render_width: 640
+  save_depth: false
+  output_dir: "./datasets"
+
+# IL demo collection settings
+il_demo:
+  enabled: true
+  num_demos: 100
+  max_steps: 300
+  control_substeps: 5
+  camera: "cam_front"                    # override to "eye_in_hand" for wrist-mounted cameras
+  display_scale: 1.0
+  save_depth: false
+
+seed: null

@@ -20,6 +20,7 @@ from domain_rand.core.config import (
     DomainRandConfig,
     CameraRandomizationConfig,
     LightingRandomizationConfig,
+    PlacementRandomizationConfig,
     TextureRandomizationConfig,
 )
 from domain_rand.core.scene import Scene
@@ -27,6 +28,7 @@ from domain_rand.randomizers.base import DomainRandomizer
 from domain_rand.randomizers.texture import TextureRandomizer
 from domain_rand.randomizers.lighting import LightingRandomizer
 from domain_rand.randomizers.camera import CameraRandomizer
+from domain_rand.randomizers.placement import ObjectPlacementRandomizer
 from domain_rand.pipeline.recorder import DatasetRecorder
 from domain_rand.pipeline.metadata import (
     build_dataset_attrs,
@@ -86,6 +88,11 @@ class DatasetCollector:
             "lighting",
             LightingRandomizer(self.config.lighting, self.rng),
             enabled=self.config.lighting.enabled,
+        )
+        dr.register(
+            "placement",
+            ObjectPlacementRandomizer(self.config.placement, self.rng),
+            enabled=self.config.placement.enabled,
         )
         dr.register(
             "camera",
