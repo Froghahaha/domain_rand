@@ -57,3 +57,5 @@ il_demo:
   camera: "cam_front"
   display_scale: 1.0
   save_depth: false
+  recorder: "simple"                     # "simple" | "robomimic" | "pkg.MyRecorder"
+  recorder_kwargs: {}

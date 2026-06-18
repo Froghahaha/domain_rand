@@ -65,7 +65,11 @@ domain_rand/
 │   │   ├── collector.py        # 离线 DR 采集循环
 │   │   ├── demo_collector.py   # 🆕 交互式 IL 采集循环
 │   │   ├── recorder.py         # 单帧 HDF5 记录器
-│   │   ├── il_recorder.py      # 🆕 多帧轨迹 HDF5 记录器
+│   │   ├── il_recorder.py      # 🆕 向后兼容重导出（→ recorders.simple）
+│   │   ├── recorders/          # 🆕 可插拔 HDF5 记录器
+│   │   │   ├── base.py         #   BaseRecorder ABC
+│   │   │   ├── simple.py       #   SimpleRecorder（灵活 dict，默认）
+│   │   │   └── robomimic.py    #   RobomimicRecorder
 │   │   └── metadata.py         # 元数据管理
 │   └── utils/
 │       └── rendering.py        # RGB/深度渲染 + 相机矩阵
@@ -187,6 +191,8 @@ dataset.h5
 - **`ILRecorder`**（[pipeline/il_recorder.py](src/domain_rand/pipeline/il_recorder.py)）— 多帧 HDF5 轨迹记录器
 
 ### IL 数据集格式（HDF5）
+
+> 以下为默认 `SimpleRecorder` 的输出格式。可通过 `il_demo.recorder` 切换为 [robomimic 格式](#格式-2robomimicrecorder) 或[自定义格式](#格式-3自定义-recorder)。
 
 ```
 demos.h5
@@ -391,6 +397,8 @@ python scripts/collect_demos.py \
 | `--policy` | Policy 类的完整模块路径（内置 `KeyboardTeleop` 或自定义） |
 | `-n` / `--num-demos` | 采集的 demo 数量 |
 | `-o` / `--output` | 输出 HDF5 路径 |
+| `-r` / `--recorder` | 覆盖 recorder 后端（`simple` / `robomimic` / 类路径） |
+| `--recorder-kwargs` | JSON 字符串，覆盖 recorder 构造参数 |
 
 ### 键盘遥操作说明
 
@@ -406,6 +414,208 @@ python scripts/collect_demos.py \
 | `ESC` | — | 退出采集 |
 
 可通过 `add_key_binding(key, dim, sign)` 或覆写 `DEFAULT_KEYMAP` 自定义键位。
+
+### HDF5 输出格式定制（可插拔 Recorder）
+
+通过配置 `il_demo.recorder` 字段，可以切换 HDF5 输出格式，无需修改 task 或 collector 代码。
+
+#### 三种 Recorder
+
+| recorder 值 | 类 | 说明 |
+|-------------|-----|------|
+| `"simple"` | `SimpleRecorder` | **默认**。灵活 dict 格式，Task 返回的所有 key 自动记录 |
+| `"robomimic"` | `RobomimicRecorder` | robomimic 兼容格式，可直接用 `robomimic.SequenceDataset` 加载 |
+| `"pkg.MyRecorder"` | 自定义 | 实现 `BaseRecorder` ABC，框架通过类路径动态加载 |
+
+配置方式（YAML）：
+
+```yaml
+il_demo:
+  recorder: "robomimic"                # 选择 recorder
+  recorder_kwargs:                     # 传给 recorder 构造函数的额外参数
+    image_keys: ["rgb"]                # 哪些 key 是图像（走 gzip 压缩）
+    state_keys: ["state"]              # 哪些 key 拼接成 states 数据集
+    key_rename:                        # 可选：输出 key 重命名
+      rgb: "agentview_image"
+```
+
+CLI 覆盖：
+
+```bash
+python scripts/collect_demos.py \
+    --recorder robomimic \
+    --recorder-kwargs '{"image_keys":["rgb"],"state_keys":["state"]}' \
+    ...
+```
+
+---
+
+#### 格式 1：SimpleRecorder（默认）
+
+Task 返回什么就记录什么，无需额外配置。
+
+```
+dataset.h5
+├── .attrs/                     # 全局元数据
+└── episode_XXXX/
+    ├── observations/           # Task.get_observation() 的所有 key
+    │   ├── rgb                # (T, H, W, 3)  ← 图像自动 gzip 压缩
+    │   ├── state              # (T, D)
+    │   ├── rgb_side           # (T, H, W, 3)  ← 自定义额外相机
+    │   └── ...                # 任意其他 key
+    ├── infos/                  # Task.step() 的 info dict（可选）
+    │   ├── distance           # (T,)
+    │   ├── success            # (T,)
+    │   └── ...
+    ├── actions                 # (T, A)
+    ├── rewards                 # (T,)
+    ├── dones                   # (T,)
+    └── .attrs/meta             # episode 元数据 (JSON)
+```
+
+**数据自动流转规则**：
+- `Task.get_observation()` 返回 `{"state": ..., "rgb_side": ...}` → 全部记入 `observations/`
+- `Task.step()` 的 `info` 返回 `{"distance": 0.1}` → 全部记入 `infos/`
+- 框架自动为 rank ≥ 3 的数组启用 gzip 压缩
+
+---
+
+#### 格式 2：RobomimicRecorder
+
+输出符合 [robomimic](https://github.com/ARISE-Initiative/robomimic) 官方格式，可直接用于训练：
+
+```
+demo.hdf5
+├── data/
+│   ├── demo_0/
+│   │   ├── states              # (T, D)  ← state_keys 拼接
+│   │   ├── actions             # (T, A)
+│   │   ├── rewards             # (T,)
+│   │   ├── dones               # (T,)
+│   │   ├── obs/                # 所有 observation key
+│   │   │   ├── agentview_image # image_keys → gzip 压缩
+│   │   │   ├── state           # 低维状态分量
+│   │   │   └── ...
+│   │   ├── model_file          # MuJoCo XML 字符串
+│   │   └── .attrs/
+│   └── ...
+└── .attrs/
+    ├── total
+    └── env_args
+```
+
+`recorder_kwargs` 参数说明：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `image_keys` | `list[str]` | `["rgb"]` | 图像类 observation key，存入 `obs/` 并 gzip 压缩 |
+| `state_keys` | `list[str]` | `["state"]` | 低维状态 key，**按顺序拼接**为 `states` 数据集 |
+| `key_rename` | `dict[str,str]` | `{}` | 输出时重命名 key（如 `rgb` → `agentview_image`） |
+| `store_model_xml` | `bool` | `true` | 是否在每个 demo 中存储 MuJoCo XML |
+
+**完整配置示例**（多相机 + 分体状态）：
+
+```yaml
+il_demo:
+  recorder: "robomimic"
+  recorder_kwargs:
+    image_keys: ["rgb", "rgb_wrist"]
+    state_keys: ["robot_joints", "object_pose"]
+    key_rename:
+      rgb: "agentview_image"
+      rgb_wrist: "robot0_eye_in_hand_image"
+      robot_joints: "robot0_joint_pos"
+```
+
+对应 Task 的 `get_observation()` 返回：
+```python
+def get_observation(self, scene):
+    return {
+        "rgb": ...,                 # → obs/agentview_image (gzip 压缩)
+        "rgb_wrist": ...,           # → obs/robot0_eye_in_hand_image (gzip)
+        "robot_joints": ...,        # → states 的第 1 段 + obs/robot0_joint_pos
+        "object_pose": ...,         # → states 的第 2 段 + obs/object_pose
+    }
+```
+
+---
+
+#### 格式 3：自定义 Recorder
+
+实现 `BaseRecorder` 三个方法，放在任意 Python 模块中，框架通过类路径动态加载。
+
+**接口定义**（[recorders/base.py](src/domain_rand/pipeline/recorders/base.py)）：
+
+```python
+from domain_rand.pipeline.recorders.base import BaseRecorder
+
+class MyRecorder(BaseRecorder):
+    def __init__(self, output_path, **kwargs):
+        # kwargs 来自 recorder_kwargs 配置
+        ...
+
+    def open(self, attrs: dict | None = None) -> None:
+        """打开文件，写入全局属性。"""
+        ...
+
+    def write_episode(
+        self,
+        episode_idx: int,
+        observations: dict[str, np.ndarray],  # {"rgb": (T,H,W,3), "state": (T,D), ...}
+        actions: np.ndarray,                   # (T, A)
+        rewards: np.ndarray,                   # (T,)
+        dones: np.ndarray,                     # (T,)
+        infos: dict[str, np.ndarray] | None,   # {"distance": (T,), ...}
+        meta: dict | None,                     # episode 元数据
+    ) -> None:
+        """写入一个 episode 的完整轨迹。"""
+        ...
+
+    def close(self) -> None:
+        """关闭文件。"""
+        ...
+```
+
+**使用方式**：
+
+```yaml
+il_demo:
+  recorder: "my_project.my_recorder.MyRecorder"
+  recorder_kwargs:
+    any_custom_param: 42
+```
+
+框架通过 `importlib` 加载 `my_project.my_recorder.MyRecorder`，传入 `output_path` 和 `recorder_kwargs`。
+
+**最小实现示例**（写 JSONL 而非 HDF5）：
+
+```python
+import json
+import numpy as np
+from domain_rand.pipeline.recorders.base import BaseRecorder
+
+class JSONLRecorder(BaseRecorder):
+    def __init__(self, output_path, **kwargs):
+        self.path = output_path
+        self.indent = kwargs.get("indent", None)
+
+    def open(self, attrs=None):
+        self._f = open(self.path, "w")
+
+    def write_episode(self, ep, obs, actions, rewards, dones, infos=None, meta=None):
+        # 将 numpy 数组转为 list，写入一行 JSON
+        record = {
+            "episode": ep,
+            "T": len(actions),
+            "actions": actions.tolist(),
+            "rewards": rewards.tolist(),
+            "meta": meta,
+        }
+        self._f.write(json.dumps(record, indent=self.indent) + "\n")
+
+    def close(self):
+        self._f.close()
+```
 
 ### Scene 辅助方法速查
 

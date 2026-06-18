@@ -1,0 +1,45 @@
+# ── Single Part Align — Camera-to-Object Relative Pose Alignment ──────────────
+
+scene_path: "assets/scenes/single_part_align.xml"
+
+texture:
+  enabled: true
+  mode: rgb
+  rgba_range: [0.2, 1.0, 0.2, 1.0, 0.2, 1.0, 1.0, 1.0]
+  exclude_geoms: [table_top, leg_, floor]   # keep table/floor appearance stable
+
+placement:
+  enabled: false                             # task handles object placement
+
+lighting:
+  enabled: true
+  position_jitter: 0.3
+  diffuse_range: [0.4, 1.0]
+  ambient_range: [0.1, 0.4]
+  specular_range: [0.0, 0.4]
+  direction_jitter: 0.2
+  random_toggle: false
+
+camera:
+  enabled: false                             # align_cam should NOT jitter
+
+dataset:
+  render_height: 480
+  render_width: 640
+  save_depth: false
+  output_dir: "./datasets"
+
+il_demo:
+  enabled: true
+  num_demos: 500
+  max_steps: 100
+  control_substeps: 5
+  camera: "align_cam"                       # the moving camera on cam_body
+  display_scale: 1.0
+  save_depth: true
+  recorder: "robomimic"
+  recorder_kwargs:
+    image_keys: ["rgb","depth"]
+    state_keys: ["state"]
+
+seed: null

@@ -6,10 +6,14 @@ domain-randomization pipeline.
 """
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from domain_rand.core.scene import Scene
+
+if TYPE_CHECKING:
+    from domain_rand.randomizers.base import DomainRandomizer
 
 
 class Task(ABC):
@@ -78,6 +82,31 @@ class Task(ABC):
         """
 
     # ── Optional ──────────────────────────────────────────────────────────
+
+    def register_randomizers(
+        self, dr: "DomainRandomizer", rng: np.random.Generator,
+    ) -> None:
+        """Register task-specific randomizers.
+
+        Called once during DemoCollector initialization.  Override
+        to add randomizers that are specific to your task — object
+        placement, goal sampling, physics parameters, etc.
+
+        The framework always registers texture, lighting, and camera
+        randomizers automatically.  You only need to add the ones
+        that are unique to your task.
+
+        Example:
+            from domain_rand.randomizers.placement import (
+                ObjectPlacementRandomizer,
+                PlacementRandomizationConfig,
+            )
+            cfg = PlacementRandomizationConfig(table_z=0.425, ...)
+            dr.register("placement",
+                ObjectPlacementRandomizer(cfg, rng),
+                enabled=True,
+            )
+        """
 
     def get_done(self, scene: Scene) -> bool:
         """Check whether the episode should end (e.g. timeout, success).

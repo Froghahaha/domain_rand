@@ -118,6 +118,10 @@ class ILDemoConfig:
     display_scale: float = 1.0
     # Whether to save depth images alongside RGB
     save_depth: bool = False
+    # Recorder backend: "simple" (default), "robomimic", or "pkg.MyRecorder"
+    recorder: str = "simple"
+    # Extra kwargs passed to the recorder constructor
+    recorder_kwargs: dict = field(default_factory=dict)
 
 
 # ── Top-level config ────────────────────────────────────────────────────────

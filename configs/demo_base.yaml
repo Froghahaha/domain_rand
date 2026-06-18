@@ -41,5 +41,14 @@ il_demo:
   camera: "cam_front"                    # override to "eye_in_hand" for wrist-mounted cameras
   display_scale: 1.0
   save_depth: false
+  recorder: "simple"                     # "simple" | "robomimic" | "pkg.MyRecorder"
+  recorder_kwargs: {}                    # kwargs for the recorder constructor
+  # Example for robomimic:
+  # recorder: "robomimic"
+  # recorder_kwargs:
+  #   image_keys: ["rgb"]
+  #   state_keys: ["state"]
+  #   key_rename:
+  #     rgb: "agentview_image"
 
 seed: null
