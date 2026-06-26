@@ -58,6 +58,7 @@ class SinglePartAlign(Task):
         self.target_dist_range = (0.35, 0.45)
         self.target_pos_offset_range = 0.1
         self.target_ang_offset = 5.0
+        self.fixed_target = False          # True → same target across all episodes
 
         # ── Initial = target + perturbation ─────────────────────
         self.init_pos_perturb = 0.15    # max position perturbation (m)
@@ -89,22 +90,24 @@ class SinglePartAlign(Task):
             self._obj_body_id = scene.get_body_index(self.obj_body)
 
         # 1. Place object on table
-        obj_x = rng.uniform(-0.20, 0.20)
-        obj_y = rng.uniform(-0.15, 0.15)
-        obj_yaw = rng.uniform(-np.pi, np.pi)
+        obj_x = rng.uniform(-0.20, 0.20)*0
+        obj_y = rng.uniform(-0.15, 0.15)*0
+        obj_yaw = rng.uniform(-np.pi, np.pi)*0
         qw, qz = np.cos(obj_yaw / 2), np.sin(obj_yaw / 2)
         scene.model.body_pos[self._obj_body_id] = np.array(
-            [obj_x, obj_y, self.table_z + self.obj_mesh_half_z])+rng.uniform(-0.2, 0.2, 3)
+            [obj_x, obj_y, self.table_z + self.obj_mesh_half_z])+rng.uniform(-0.2, 0.2, 3)*0
         scene.model.body_quat[self._obj_body_id] = np.array([qw, 0.0, 0.0, qz])
         scene.forward()
 
         obj_pos, _ = scene.get_body_pose(self.obj_body)
 
-        # 2. Sample target camera pose
-        self._target_pos, self._target_quat_wxyz = self._sample_pose(
-            rng, obj_pos, self.target_dist_range,
-            self.target_pos_offset_range, self.target_ang_offset,
-        )
+        # 2. Sample target camera pose (once if fixed, otherwise per-episode)
+        self.fixed_target =True
+        if not self.fixed_target or self._target_pos.sum() == 0.0:
+            self._target_pos, self._target_quat_wxyz = self._sample_pose(
+                rng, obj_pos, self.target_dist_range,
+                self.target_pos_offset_range, self.target_ang_offset,
+            )
 
         # 3. Initial = target + random perturbation
         init_pos = self._target_pos + rng.uniform(

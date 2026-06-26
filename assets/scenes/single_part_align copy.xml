@@ -29,7 +29,7 @@
            castshadow="false" />
 
     <!-- ── Floor ─────────────────────────────────────────────────────── -->
-    <!-- <geom name="floor" type="plane" pos="0 0 0" size="3 3 0.1" material="mat_floor" /> -->
+    <geom name="floor" type="plane" pos="0 0 0" size="3 3 0.1" material="mat_floor" />
 
     <!-- ── Table ─────────────────────────────────────────────────────── -->
     <!-- Table top at z=0.4m, dimensions 1.0m x 0.8m x 0.025m -->
